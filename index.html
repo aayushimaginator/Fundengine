@@ -103,7 +103,7 @@ from io import BytesIO
 from pyodide.ffi import create_proxy
 from js import document
 
-PORTFOLIO_URL = "https://raw.githubusercontent.com/aayushimagin ator/Fundengine/main/portfolio.json"
+portfolio = json.loads('''{"120644": {"name": "Nifty 50 Index (Nippon)", "units": 55.4}, "151121": {"name": "Smallcap 250 Index (Groww)", "units": 48.6}}''')
 
 def show_error(msg):
     document.getElementById("error-msg").innerHTML = f"<p>{msg}</p>"
