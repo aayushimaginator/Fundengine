@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FundEngine Portfolio Tracker</title>
+  <link rel="stylesheet" href="https://pyscript.net/releases/2025.3.1/core.css">
+  <script defer src="https://pyscript.net/releases/2025.3.1/core.js"></script>
+
+  <py-config>
+    packages = ["matplotlib", "numpy", "pandas", "requests"]
+  </py-config>
+
+  <style>
+    body { font-family: Arial, sans-serif; background: #111; color: #eee; margin: 20px; }
+    table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+    th, td { border: 1px solid #444; padding: 10px; text-align: left; }
+    th { background: #222; }
+    .plot-container { margin: 30px 0; }
+    #status { color: #8f8; font-size: 1.1em; }
+  </style>
+</head>
+<body>
+
+  <h1>FundEngine Portfolio Tracker</h1>
+
+  <div id="table"></div>
+  <div id="status">Loading portfolio...</div>
+  <div class="plot-container">
+    <div id="plot"></div>
+  </div>
+
+  <py-script>
+import json
+import requests
+import matplotlib.pyplot as plt
+import numpy as np
+from pyodide.ffi import create_proxy
+from js import document
+
+# Load portfolio (you can embed sample or fetch from raw GitHub URL)
+PORTFOLIO_JSON = """
+{
+  "120644": {"name": "Nifty 50 Index (Nippon)", "units": 55.4},
+  "151121": {"name": "Smallcap 250 Index (Groww)", "units": 48.6}
+}
+"""  # Replace with real file or fetch
+
+portfolio = json.loads(PORTFOLIO_JSON)
+
+def fetch_latest_nav(scheme_code):
+    url = f"https://api.mfapi.in/mf/{scheme_code}"
+    try:
+        resp = requests.get(url, timeout=5)
+        data = resp.json()
+        if data.get('data'):
+            latest = data['data'][0]
+            return float(latest['nav']), latest['date']
+    except:
+        pass
+    return None, None
+
+# Build table and data
+table_html = """
+<table>
+  <tr><th>Fund Name</th><th>NAV</th><th>Units</th><th>Value (₹)</th></tr>
+"""
+
+total_value = 0.0
+names = []
+values = []
+last_date = "unknown"
+
+for code, info in portfolio.items():
+    nav, date = fetch_latest_nav(code)
+    if nav is not None:
+        if date:
+            last_date = date
+        val = nav * info['units']
+        total_value += val
+        names.append(info['name'][:18] + '…' if len(info['name']) > 18 else info['name'])
+        values.append(val)
+
+        table_html += f"""
+        <tr>
+          <td>{info['name']}</td>
+          <td>{nav:.2f}</td>
+          <td>{info['units']:.2f}</td>
+          <td>{val:,.2f}</td>
+        </tr>
+        """
+    else:
+        table_html += f"<tr><td>{info['name']} (failed)</td><td>-</td><td>-</td><td>-</td></tr>"
+
+table_html += f"""
+  <tr style="font-weight:bold; background:#222;">
+    <td>TOTAL</td><td></td><td></td><td>{total_value:,.2f}</td>
+  </tr>
+</table>
+"""
+
+document.getElementById("table").innerHTML = table_html
+
+# Status + projection
+proj_2y = total_value * (1.12 ** 2)
+proj_5y = total_value * (1.12 ** 5)
+document.getElementById("status").innerHTML = (
+    f"Last update: {last_date} • "
+    f"2 years @12% ≈ ₹{proj_2y:,.0f} • "
+    f"5 years @12% ≈ ₹{proj_5y:,.0f}"
+)
+
+# Plot
+if values:
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.bar(names, values, color=['#4e79a7', '#f28e2b'])
+    ax.set_title('Portfolio Value Breakdown')
+    ax.set_ylabel('Value (₹)')
+    ax.tick_params(axis='x', rotation=35)
+    ax.grid(axis='y', linestyle='--', alpha=0.4)
+
+    # Display in div
+    display(fig, target="plot")
+</py-script>
+
+</body>
+</html>
