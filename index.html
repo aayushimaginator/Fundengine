@@ -4,14 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FundEngine Portfolio Tracker</title>
-  
   <link rel="stylesheet" href="https://pyscript.net/releases/2025.3.1/core.css">
   <script defer src="https://pyscript.net/releases/2025.3.1/core.js"></script>
-
   <py-config>
     packages = ["matplotlib", "numpy", "requests", "base64", "io"]
+    splashscreen = false
   </py-config>
-
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -44,6 +42,9 @@
     tr:nth-child(even) {
       background: #0d1117;
     }
+    tr:nth-child(odd) {
+      background: #161b22;
+    }
     #status {
       color: #8ac54f;
       font-size: 1.1em;
@@ -75,123 +76,133 @@
       color: #f85149;
       text-align: center;
       margin: 10px 0;
+      font-weight: bold;
+    }
+    #loading {
+      text-align: center;
+      color: #8b949e;
+      font-style: italic;
     }
   </style>
 </head>
 <body>
-
   <h1>FundEngine Portfolio Tracker</h1>
-
   <button id="refresh-btn">Refresh Data</button>
-
-  <div id="status">Loading portfolio data...</div>
+  <div id="status" id="loading">Loading portfolio data...</div>
   <div id="error-msg"></div>
-
   <div id="table"></div>
-
   <div class="plot-container">
-    <div id="plot">Generating chart...</div>
+    <div id="plot" id="loading">Generating chart...</div>
   </div>
 
-
   <py-script>
-  import json
-  import requests
-  import matplotlib.pyplot as plt
-  import base64
-  from io import BytesIO
-  from pyodide.ffi import create_proxy
-  from js import document
+import json
+import requests
+import matplotlib.pyplot as plt
+import base64
+from io import BytesIO
+from pyodide.ffi import create_proxy
+from js import document
 
-  portfolio = {
-      "120644": {"name": "Nifty 50 Index (Nippon)", "units": 55.4},
-      "151121": {"name": "Smallcap 250 Index (Groww)", "units": 48.6}
-  }
+# Hardcoded portfolio (self-contained; no external fetch needed)
+portfolio = {
+    "120644": {"name": "Nifty 50 Index (Nippon)", "units": 55.4},
+    "151121": {"name": "Smallcap 250 Index (Groww)", "units": 48.6}
+}
 
-  def show_error(msg):
-      document.getElementById("error-msg").innerHTML = f"<p>{msg}</p>"
+def show_error(msg):
+    document.getElementById("error-msg").innerHTML = f"<p>{msg}</p>"
 
-  def update_display():
-      document.getElementById("status").innerHTML = "Fetching latest NAVs..."
-      document.getElementById("error-msg").innerHTML = ""
-      document.getElementById("plot").innerHTML = "Generating chart..."
+def update_display():
+    document.getElementById("status").innerHTML = "Fetching latest NAVs..."
+    document.getElementById("error-msg").innerHTML = ""
+    document.getElementById("plot").innerHTML = "Generating chart..."
 
-      try:
-          table_html = '<table><tr><th>Fund Name</th><th>NAV</th><th>Units</th><th>Value (₹)</th></tr>'
-          total_value = 0.0
-          names = []
-          values = []
-          last_date = "unknown"
-  
-          for code, info in portfolio.items():
-              url = f"https://api.mfapi.in/mf/{code}"
-              try:
-                  nav_resp = requests.get(url, timeout=5)
-                  data = nav_resp.json()
-                  if data.get('data'):
-                      latest = data['data'][0]
-                      nav = float(latest['nav'])
-                      date = latest['date']
-                      if date:
-                          last_date = date
-                      val = nav * info['units']
-                      total_value += val
-                      short_name = info['name'][:18] + '…' if len(info['name']) > 18 else info['name']
-                      names.append(short_name)
-                      values.append(val)
-                      table_html += f'<tr><td>{info["name"]}</td><td>{nav:.2f}</td><td>{info["units"]:.2f}</td><td>{val:,.2f}</td></tr>'
-                  else:
-                      table_html += f'<tr><td>{info["name"]} (no data)</td><td>-</td><td>-</td><td>-</td></tr>'
-              except Exception as e:
-                  table_html += f'<tr><td>{info["name"]} (fetch failed)</td><td>-</td><td>-</td><td>-</td></tr>'
+    try:
+        table_html = '<table><tr><th>Fund Name</th><th>NAV</th><th>Units</th><th>Value (₹)</th></tr>'
+        total_value = 0.0
+        names = []
+        values = []
+        last_date = "unknown"
 
-          table_html += f'<tr style="font-weight:bold;background:#21262d;"><td>TOTAL</td><td></td><td></td><td>{total_value:,.2f}</td></tr></table>'
-          document.getElementById("table").innerHTML = table_html
+        for code, info in portfolio.items():
+            url = f"https://api.mfapi.in/mf/{code}"
+            try:
+                nav_resp = requests.get(url, timeout=5)
+                data = nav_resp.json()
+                if data.get('data'):
+                    latest = data['data'][0]
+                    nav = float(latest['nav'])
+                    date = latest['date']
+                    if date:
+                        last_date = date
+                    val = nav * info['units']
+                    total_value += val
+                    short_name = info['name'][:18] + '…' if len(info['name']) > 18 else info['name']
+                    names.append(short_name)
+                    values.append(val)
+                    table_html += f'<tr><td>{info["name"]}</td><td>{nav:.2f}</td><td>{info["units"]:.2f}</td><td>{val:,.2f}</td></tr>'
+                else:
+                    table_html += f'<tr><td>{info["name"]} (no data)</td><td>-</td><td>-</td><td>-</td></tr>'
+            except Exception as e:
+                table_html += f'<tr><td>{info["name"]} (fetch failed)</td><td>-</td><td>-</td><td>-</td></tr>'
 
-          proj_2y = total_value * (1.12 ** 2)
-          proj_5y = total_value * (1.12 ** 5)
-          document.getElementById("status").innerHTML = (
-              f"Last update: {last_date} • "
-              f"2 years @12% ≈ ₹{proj_2y:,.0f} • "
-              f"5 years @12% ≈ ₹{proj_5y:,.0f}"
-          )
+        table_html += f'<tr style="font-weight:bold;background:#21262d;"><td>TOTAL</td><td></td><td></td><td>{total_value:,.2f}</td></tr></table>'
+        document.getElementById("table").innerHTML = table_html
 
-          if values:
-              fig, ax = plt.subplots(figsize=(7.2, 4.2))
-              ax.bar(names, values, color=['#4e79a7', '#f28e2b'])
-              ax.set_title('Portfolio Value Breakdown', color='white')
-              ax.set_ylabel('Value (₹)', color='white')
-              ax.tick_params(axis='x', rotation=35, colors='white')
-              ax.tick_params(axis='y', colors='white')
-              ax.grid(axis='y', linestyle='--', alpha=0.4, color='gray')
-              fig.patch.set_facecolor('#161b22')
-              ax.set_facecolor('#0d1117')
-              ax.spines['bottom'].set_color('gray')
-              ax.spines['top'].set_color('gray')
-              ax.spines['left'].set_color('gray')
-              ax.spines['right'].set_color('gray')
-              buf = BytesIO()
-              fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor=fig.get_facecolor())
-              buf.seek(0)
-              img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-              plt.close(fig)
-              img_tag = f'<img src="data:image/png;base64,{img_base64}" style="max-width:100%; height:auto; border-radius:6px;">'
-              document.getElementById("plot").innerHTML = img_tag
-          else:
-              document.getElementById("plot").innerHTML = "<p style='color:#f85149;'>No valid data to plot</p>"
+        # Status + projection
+        proj_2y = total_value * (1.12 ** 2)
+        proj_5y = total_value * (1.12 ** 5)
+        document.getElementById("status").innerHTML = (
+            f"Last update: {last_date} • "
+            f"2 years @12% ≈ ₹{proj_2y:,.0f} • "
+            f"5 years @12% ≈ ₹{proj_5y:,.0f}"
+        )
 
-      except Exception as e:
-          show_error(f"Error: {str(e)}")
-          document.getElementById("status").innerHTML = "Failed to load data"
-  
-  update_display()
-  
-  def on_refresh(*args):
-      update_display()
+        # Plot
+        if values:
+            fig, ax = plt.subplots(figsize=(7.2, 4.2))
+            ax.bar(names, values, color=['#4e79a7', '#f28e2b'])
+            ax.set_title('Portfolio Value Breakdown', color='white', fontsize=14)
+            ax.set_ylabel('Value (₹)', color='white', fontsize=12)
+            ax.tick_params(axis='x', rotation=35, colors='white', labelsize=10)
+            ax.tick_params(axis='y', colors='white', labelsize=10)
+            ax.grid(axis='y', linestyle='--', alpha=0.4, color='gray')
+            fig.patch.set_facecolor('#161b22')
+            ax.set_facecolor('#0d1117')
+            ax.spines['bottom'].set_color('gray')
+            ax.spines['top'].set_color('gray')
+            ax.spines['left'].set_color('gray')
+            ax.spines['right'].set_color('gray')
+            ax.title.set_color('white')
+            ax.yaxis.label.set_color('white')
+            buf = BytesIO()
+            fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor=fig.get_facecolor())
+            buf.seek(0)
+            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            plt.close(fig)
+            img_tag = f'<img src="data:image/png;base64,{img_base64}" style="max-width:100%; height:auto; border-radius:6px;">'
+            document.getElementById("plot").innerHTML = img_tag
+        else:
+            document.getElementById("plot").innerHTML = "<p style='color:#f85149;'>No valid data to plot</p>"
 
-  btn = document.getElementById("refresh-btn")
-  btn.addEventListener("click", create_proxy(on_refresh))
+    except Exception as e:
+        show_error(f"Error: {str(e)}")
+        document.getElementById("status").innerHTML = "Failed to load data"
+
+# Initial load
+update_display()
+
+# Refresh button
+def on_refresh(*args):
+    update_display()
+
+btn = document.getElementById("refresh-btn")
+btn.addEventListener("click", create_proxy(on_refresh))
+
+# Auto-refresh every 60 seconds
+from js import setInterval
+setInterval(create_proxy(lambda: on_refresh()), 60000)
   </py-script>
-
 </body>
 </html>
